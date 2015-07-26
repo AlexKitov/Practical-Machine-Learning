@@ -1,0 +1,175 @@
+---
+title: "Practical Machine learning"
+author: "Aleksandar Kittov"
+date: "July 26, 2015"
+output: html_document
+---
+
+# Summary
+
+The project aims at building a mathematical model on a data sampled from 5 subjects. Each subject performs dumbbell lift in 5 different categories (ways) classified as **proper** or with one of the four most common mistakes in a dumbbell lift exercise. The model aims to predict the way the subject is performing the exercise according to data measured form 5 accelerometer mounted on the arm, waist and dumbbell of the subject. The model build was based on a **random forest** algorithm using 10 folds 10 repetition cross validation. The final model has **accuracy of 98.895%** and **mtry = 27** with **500 trees** in the forest.
+
+# Introduction
+The following document describes the build of a machine learning algorithm as part of "Practical machine learning" Coursera class. The course is part of "Data scientist specialization" with John Hopkins Bloomberg School of public health.
+
+The goal of the project is to build a classifier, which correctly predicts the way a dumbbell lift exercise is executed. The data used for the assignment is provided by Groupware@LES: **group of research and development of groupware technologies** and the data set used for this project is related to **HAR - Human activity recognition** project. The data set is available for download at: <http://groupware.les.inf.puc-rio.br/static/har/dataset-har-PUC-Rio-ugulino.zip>. More information about the setup of the project and the environment in which the data was collected can be found at: <http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises> under **Weight Lifting Exercises Dataset** section. 
+
+# Data set
+
+The data set consist of **training** and **testing** data split in two different files, **pml-trining.csv** and **pml-testing.csv** respectively. The training data consist of ~20000 records of 160 variables (please make sure that both files are in your working directory). After reading the data it becomes evident that many of the variables are not used or are irrelevant for building a prediction model. 
+
+```{r}
+library(readr) # For reading the data form the file
+
+# Read the data ----
+rawTrainingData <- read_csv("pml-training.csv")
+```
+
+#Cleaning the data
+In order to clean the data a **cleanData** function as created. The purpose of the function is to remove all variables that have more **`NA`** values than a certain **trash hold** value. It was found out that for the purposes of this project any column with more than **100 `NA` values** in it is not relevant for building the prediction model. Additionally, it was found out that all character variables related to the datetime the measurement was taken, subject name, time-window are not relevant for building the model. Ideally the purpose of the model will be to receive a certain set of measurements form a wearable device and to predict from which kind/type/class of exercise the sample was measured (classe) variable in the training set.  
+
+```{r}
+# Config ----
+
+library(caret) # For building the machine learning algorithm
+
+na.tresh <- 100   # max missing values in a collumn to be considered usefull
+train.part <- .75
+
+
+# Functions ----
+cleanData <- function(df = data.frame(), na.tresh = numeric()){
+        
+        # Identify and remove columns with too many NA values
+        cleanCol <- colSums(is.na(df))
+        cleanCol <- which(cleanCol < na.tresh)
+        
+        df <- df[,cleanCol] 
+        
+        # Identify and remove columns with character value
+        cleanCol <- lapply (names(df), 
+                            function (x) {typeof(df[,x])})
+        cleanCol <- which(cleanCol != "character")
+        
+        # choose only numeric values and the class (last column)
+        df <- df[,c(cleanCol, length(df))] 
+        
+        # Remove timestamps, window number and row number
+        df <- df[, -(1:4)]
+        df
+}
+```
+
+Eventually, the **cleanData** function removes all unnecessary variables and leaves only numeric variables without **`NA`** values and the **classe** variable to be predicted.
+
+```{r}
+# Clean the data ----
+rawTrainingData <- cleanData(rawTrainingData, na.tresh)
+#str(rawTrainingData)
+ifelse (sum(is.na(rawTrainingData)),
+        "There are missing values in the training set!",
+        "There are NOT missing values in the training set!")
+
+```
+
+# Building the model
+
+In the next step the training is split into two groups. The first group **training** is used for building the model and the second group **validating** is used for validating the model and maybe do some minor adjustments before performing the real test on the **testing set**. For the purpose of this project **75%** of the training data was used for **training** and **25%** for **validation**.
+
+```{r}
+# Preparing the data
+
+set.seed(232323)
+
+inTraining <- createDataPartition(rawTrainingData$classe, p = train.part, list = FALSE)
+training   <- rawTrainingData[inTraining, ]
+validating <- rawTrainingData[-inTraining, ]
+```
+
+Furthermore some exploratory analysis was performed on the data. Due to the large amount of variables only one graph was shown in this document. As it becomes evident from the plot below (and many more not presented here), the problem is rather difficult. All samples are clustered in tree main cluster but each cluster consist samples from several if not all of the classes of exercises.
+
+```{r}
+#Exploratory analysis
+
+ggplot(validating, aes(x = roll_belt, y = pitch_belt, color = classe)) + geom_point()
+```
+
+In the next step the actual model was build using the **Random Forest** algorithm with **10 Folds Repetitive Cross Validation with 10 repetition**. The code can be seen in the commented part and the model is read from an **.Rds** file where it was stored after the training was completed. The reason for this technique is the long time such a training can take (**up to several hours**).
+
+```{r}
+############# Model building section ############################################
+# uncomment for performing the actual training used for generating the model   #
+# used for all future predictions in this document.                           #
+#                                                                               #
+# !!!!!!!!!!Caution long time to run !!!!!!!!!!!!!                              #
+#                                                                               #
+#################################################################################
+#
+# set.seed(232323)
+# Training the model ----
+# tc <- trainControl(## 10-fold CV
+#         method = "repeatedcv",
+#         number = 10,
+#         ## repeated ten times
+#         repeats = 10) 
+#
+# start.train <- Sys.time() 
+# modFitRF   <- train(as.factor(classe) ~ ., method="rf", 
+#                                 data = training, trainControl=tc)
+# end.train <- Sys.time()
+# train.dur <- end.train - start.train
+#
+############ End of Model building section ######################################
+
+############ Read the model from a file #########################################
+# comment this section if you want to perform actual training                   #
+#################################################################################
+modFitRF <- readRDS("modFitRF_75_training_500_trees.rds")
+############ END of Read the model from a file ##################################
+
+modFitRF
+```
+
+
+# Results
+
+The result from fitting the model shows that the value used in the final model is **mtry = `r modFitRF$bestTune$mtry`** with and the **accuracy** of the model is **`r round(max(modFitRF$results$Accuracy) * 100, 3)`%**. This result suggests that out of sample error rate will be more than **1 - Accuracy = `r 100 - round(max(modFitRF$results$Accuracy) * 100, 3)`%**.
+
+```{r}
+# Predicting on the validating set
+validPred    <- predict(modFitRF, validating[,-length(validating)])
+validCorrect <- validPred == validating$classe
+validAcc     <- sum(validCorrect)/length(validating$classe)
+```
+
+# Validating 
+
+Furthermore, the model was tested on the **validation set**, namely the 25% of the training set left out for validation. The model has **`r round(validAcc * 100, 2)`%** accuracy, suggesting **1 - Accuracy = `r 100 - round(validAcc * 100, 2)`%** error rate.
+
+```{r}
+confusionMatrix(validating$classe, validPred)
+```
+
+Investigating the model further more shows that the model converges close to the optimum after building **200 trees** so this parameter can be adjusted to reduce the time for training the model. 
+
+```{r}
+plot(modFitRF$finalModel)
+```
+
+
+# Predicting on the testing set
+
+Finally the model was used to predict the class of exercises from which the testing samples data was drawn. The result is shown below.
+
+```{r}
+# Predicting on the teting set ----
+rawTestingData  <- read_csv("pml-testing.csv")
+testing         <- rawTestingData[,names(training[, -length(training)])]
+
+testing$testPred <- predict(modFitRF, testing)
+testing$testPred 
+```
+
+# Conclusion
+
+Further tuning of the train parameters can be performed in order to gain accuracy or faster training. However, accuracy of **`r round(max(modFitRF$results$Accuracy) * 100, 3)`%** is rather satisfying taking into account the vast amount of data which can be predicted in case of real life application and constant measurement of the subject performing the exercise.
